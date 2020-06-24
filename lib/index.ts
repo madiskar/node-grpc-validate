@@ -1,20 +1,87 @@
-import { GenericCallHandler, GenericServiceCall, NextFunction } from '@mdkr/grpc-chain';
+import {
+  GenericCallHandler,
+  GenericServiceCall,
+  NextFunction,
+  ChainServerDuplexStream,
+  ChainServerWritableStream,
+  ChainServerReadableStream,
+  ChainServerUnaryCall,
+} from '@mdkr/grpc-chain';
 import joi from '@hapi/joi';
+import * as jspb from 'google-protobuf';
+import { status } from 'grpc';
 
-async function validate(component: unknown, schema?: joi.ObjectSchema): Promise<joi.ValidationError | null> {
+export async function validate(payload: jspb.Message, schema?: joi.ObjectSchema): Promise<joi.ValidationError | null> {
   if (!schema) {
     return null;
   }
-  const error = (await schema.validateAsync(component)).error;
+  const error = (await schema.validateAsync(payload.toObject())).error;
   if (error) {
     return error;
   }
   return null;
 }
 
-export default function (schema: joi.ObjectSchema): GenericCallHandler {
+export function defaultErrorHandler(err: joi.ValidationError, call: GenericServiceCall): void {
+  if (call.ctx.method.responseStream) {
+    call = call as
+      | ChainServerDuplexStream<jspb.Message, jspb.Message>
+      | ChainServerWritableStream<jspb.Message, jspb.Message>;
+    call.sendErr({
+      name: err.name,
+      message: err.message,
+      code: status.INVALID_ARGUMENT,
+      details: err.details.join('; '),
+    });
+  } else {
+    call = call as
+      | ChainServerUnaryCall<jspb.Message, jspb.Message>
+      | ChainServerReadableStream<jspb.Message, jspb.Message>;
+    call.sendUnaryErr({
+      name: err.name,
+      message: err.message,
+      code: status.INVALID_ARGUMENT,
+      details: err.details.join('; '),
+    });
+  }
+}
+
+export type ValidationErrorHandler = (err: joi.ValidationError, call: GenericServiceCall, next: NextFunction) => void;
+
+export interface ValidationOptions {
+  errorHandler?: ValidationErrorHandler;
+  unaryRequestPayload?: joi.ObjectSchema;
+  inboundStreamPayload?: joi.ObjectSchema;
+}
+
+export default function (opts: ValidationOptions): GenericCallHandler {
   return async (call: GenericServiceCall, next: NextFunction) => {
-    const err = await validate(call);
+    if (!call.ctx.method.requestStream) {
+      call = call as
+        | ChainServerUnaryCall<jspb.Message, jspb.Message>
+        | ChainServerWritableStream<jspb.Message, jspb.Message>;
+
+      const err = await validate(call.req);
+      if (err) {
+        const errorHandler = opts.errorHandler ?? defaultErrorHandler;
+        return errorHandler(err, call, next);
+      }
+    } else {
+      call = call as
+        | ChainServerReadableStream<jspb.Message, jspb.Message>
+        | ChainServerDuplexStream<jspb.Message, jspb.Message>;
+
+      call.onMsgIn(async (payload, nextGate) => {
+        const err = await validate(payload);
+        if (err) {
+          const errorHandler = opts.errorHandler ?? defaultErrorHandler;
+          return errorHandler(err, call, next);
+        }
+
+        nextGate();
+      });
+    }
+
     next();
   };
 }
