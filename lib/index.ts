@@ -12,11 +12,12 @@ import * as jspb from 'google-protobuf';
 import { status } from 'grpc';
 
 export async function validate(payload: jspb.Message, schema: joi.ObjectSchema): Promise<joi.ValidationError | null> {
-  const err = (await schema.validateAsync(payload.toObject())).error;
-  if (err) {
+  try {
+    await schema.validateAsync(payload.toObject());
+    return null;
+  } catch (err) {
     return err;
   }
-  return null;
 }
 
 export function defaultErrorHandler(err: joi.ValidationError, call: GenericServiceCall): void {
