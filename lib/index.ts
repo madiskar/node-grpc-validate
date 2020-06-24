@@ -1,7 +1,7 @@
 import {
   GenericCallHandler,
   GenericServiceCall,
-  NextFunction,
+  ReadyFunction,
   ChainServerDuplexStream,
   ChainServerWritableStream,
   ChainServerReadableStream,
@@ -43,7 +43,7 @@ export function defaultErrorHandler(err: joi.ValidationError, call: GenericServi
   }
 }
 
-export type ValidationErrorHandler = (err: joi.ValidationError, call: GenericServiceCall, next: NextFunction) => void;
+export type ValidationErrorHandler = (err: joi.ValidationError, call: GenericServiceCall, ready: ReadyFunction) => void;
 
 export interface ValidationOptions {
   errorHandler?: ValidationErrorHandler;
@@ -52,7 +52,7 @@ export interface ValidationOptions {
 }
 
 export default function (opts: ValidationOptions): GenericCallHandler {
-  return async (call: GenericServiceCall, next: NextFunction) => {
+  return async (call: GenericServiceCall, ready: ReadyFunction) => {
     if (!call.ctx.method.requestStream) {
       call = call as
         | ChainServerUnaryCall<jspb.Message, jspb.Message>
@@ -62,7 +62,7 @@ export default function (opts: ValidationOptions): GenericCallHandler {
         const err = await validate(call.req, opts.unaryRequestSchema);
         if (err) {
           const errorHandler = opts.errorHandler ?? defaultErrorHandler;
-          return errorHandler(err, call, next);
+          return errorHandler(err, call, ready);
         }
       }
     } else {
@@ -75,13 +75,13 @@ export default function (opts: ValidationOptions): GenericCallHandler {
           const err = await validate(payload, opts.inboundStreamSchema);
           if (err) {
             const errorHandler = opts.errorHandler ?? defaultErrorHandler;
-            return errorHandler(err, call, next);
+            return errorHandler(err, call, ready);
           }
         }
         nextGate();
       });
     }
 
-    next();
+    ready();
   };
 }
