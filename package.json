@@ -1,6 +1,6 @@
 {
   "name": "@mdkr/grpc-validate",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Payload validation middleware for gRPC, built on @hapi/joi",
   "main": "./dist/index.js",
   "typings": "./dist/index.d.ts",
