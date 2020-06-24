@@ -11,13 +11,10 @@ import joi from '@hapi/joi';
 import * as jspb from 'google-protobuf';
 import { status } from 'grpc';
 
-export async function validate(payload: jspb.Message, schema?: joi.ObjectSchema): Promise<joi.ValidationError | null> {
-  if (!schema) {
-    return null;
-  }
-  const error = (await schema.validateAsync(payload.toObject())).error;
-  if (error) {
-    return error;
+export async function validate(payload: jspb.Message, schema: joi.ObjectSchema): Promise<joi.ValidationError | null> {
+  const err = (await schema.validateAsync(payload.toObject())).error;
+  if (err) {
+    return err;
   }
   return null;
 }
@@ -50,8 +47,8 @@ export type ValidationErrorHandler = (err: joi.ValidationError, call: GenericSer
 
 export interface ValidationOptions {
   errorHandler?: ValidationErrorHandler;
-  unaryRequestPayload?: joi.ObjectSchema;
-  inboundStreamPayload?: joi.ObjectSchema;
+  unaryRequestSchema?: joi.ObjectSchema;
+  inboundStreamSchema?: joi.ObjectSchema;
 }
 
 export default function (opts: ValidationOptions): GenericCallHandler {
@@ -61,10 +58,12 @@ export default function (opts: ValidationOptions): GenericCallHandler {
         | ChainServerUnaryCall<jspb.Message, jspb.Message>
         | ChainServerWritableStream<jspb.Message, jspb.Message>;
 
-      const err = await validate(call.req);
-      if (err) {
-        const errorHandler = opts.errorHandler ?? defaultErrorHandler;
-        return errorHandler(err, call, next);
+      if (opts.unaryRequestSchema) {
+        const err = await validate(call.req, opts.unaryRequestSchema);
+        if (err) {
+          const errorHandler = opts.errorHandler ?? defaultErrorHandler;
+          return errorHandler(err, call, next);
+        }
       }
     } else {
       call = call as
@@ -72,12 +71,13 @@ export default function (opts: ValidationOptions): GenericCallHandler {
         | ChainServerDuplexStream<jspb.Message, jspb.Message>;
 
       call.onMsgIn(async (payload, nextGate) => {
-        const err = await validate(payload);
-        if (err) {
-          const errorHandler = opts.errorHandler ?? defaultErrorHandler;
-          return errorHandler(err, call, next);
+        if (opts.inboundStreamSchema) {
+          const err = await validate(payload, opts.inboundStreamSchema);
+          if (err) {
+            const errorHandler = opts.errorHandler ?? defaultErrorHandler;
+            return errorHandler(err, call, next);
+          }
         }
-
         nextGate();
       });
     }
