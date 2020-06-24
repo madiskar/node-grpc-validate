@@ -29,7 +29,6 @@ export function defaultErrorHandler(err: joi.ValidationError, call: GenericServi
       name: err.name,
       message: err.message,
       code: status.INVALID_ARGUMENT,
-      details: err.details.join('; '),
     });
   } else {
     call = call as
@@ -39,7 +38,6 @@ export function defaultErrorHandler(err: joi.ValidationError, call: GenericServi
       name: err.name,
       message: err.message,
       code: status.INVALID_ARGUMENT,
-      details: err.details.join('; '),
     });
   }
 }
